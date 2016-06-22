@@ -60,3 +60,10 @@ target/
 
 #Ipython Notebook
 .ipynb_checkpoints
+
+data/*
+music_all/*
+music_dev/*
+input/*
+output/*
+*.sublime-*
