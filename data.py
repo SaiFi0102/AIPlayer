@@ -215,6 +215,19 @@ def loadDataset(nse):
 
 	return inputTrain, inputVal, outputTrain, outputVal
 
+def testNoteStateEncoder(nse, inputFileName):
+	encode_fn = theano.function([nse['input'].input_var], lasagne.layers.get_output(nse['output']))
+
+	midiFile = mido.MidiFile(os.path.join(TRAIN_MUSIC_FOLDER, inputFileName))
+	input = midiTracksToInputData(midiFile)
+
+	output = encode_fn(input)
+	outputTrack = outputDataToMidiTrack(output)
+	print outputTrack
+	outputMidiFile = mido.MidiFile()
+	outputMidiFile.tracks.append(outputTrack)
+	outputMidiFile.save("output/nse_test_" + inputFileName)
+
 def iterateBatches(inputs, outputs, shuffle):
 	assert len(inputs) > 0
 	assert len(inputs) == len(outputs)

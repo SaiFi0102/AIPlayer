@@ -5,14 +5,61 @@ from theano.ifelse import ifelse
 from constants import *
 from data import *
 from keras.models import Sequential
-from keras.layers import Dense
+from keras.layers import Dense, TimeDistributedDense
 from seq2seq.models import AttentionSeq2seq
 #from seq2seq.layers.encoders import LSTMEncoder
 #from seq2seq.layers.decoders import AttentionDecoder
 
-def logTraining(file, str):
+def buildNetwork(loadParams=False):
+	model = Sequential()
+	seq2seq = AttentionSeq2seq(
+		input_dim=NSE_ENCODED_SIZE,
+		input_length=N_INPUT_UNITS,
+		hidden_dim=100,
+		output_length=N_OUTPUT_UNITS,
+		output_dim=PITCH_COUNT,
+		dropout=0.3,
+		depth=2,
+		bidirectional=False
+	)
+
+	model.add(TimeDistributedDense(NSE_ENCODED_SIZE, input_shape=(N_INPUT_UNITS, PITCH_COUNT)))
+	model.add(seq2seq)
+
+	if type(loadParams) == str:
+		print("Loading network params...")
+		model.load_weights(loadParams)
+
+	model.compile(optimizer='adadelta', loss='mse')
+	return model
+
+def trainNetwork(model, nse):
+	print("Loading music dataset...")
+	trainInput, valInput, trainOutput, valOutput = loadDataset(nse)
+
+	print("Starting network training...")
+	checkpointer = keras.callbacks.ModelCheckpoint(filepath="data/best.w", verbose=1, save_best_only=True)
+
+	model.fit(trainInput, trainOutput,
+		batch_size=GPU_BATCH_SIZE,
+		nb_epoch=TRAIN_EPOCHS,
+		verbose=2,
+		callbacks=[checkpointer],
+		validation_data=(valInput, valOutput),
+		shuffle=True)
+
+
+
+'''def logTraining(file, str):
 	print(str)
 	file.write(str + '\n')
+
+def loadLasagneParams(network, fileName):
+	npFile = np.load("data/"+fileName)
+	inParams = npFile['arr_0']
+
+	for i, layer in enumerate(lasagne.layers.get_all_layers(network['output'])):
+		lasagne.layers.set_all_param_values(layer, inParams[i])
 
 def buildNoteStateEncoder():
 	network = collections.OrderedDict()
@@ -107,7 +154,7 @@ def trainNoteStateEncoder(network):
 			np.savez(open('data/nse_best.npz','wb'), outParams)
 			lowest_err = train_err
 
-	'''# After training, we compute and print the test error:
+	# After training, we compute and print the test error:
 	test_err = 0
 	test_acc = 0
 	test_batches = 0
@@ -118,54 +165,17 @@ def trainNoteStateEncoder(network):
 		test_err += err
 		test_acc += acc
 		test_playAcc += playAcc
-		test_batches += 1'''
+		test_batches += 1
 
 	logTraining(logFile, "Final results:")
 	logTraining(logFile, "  test loss:\t\t\t{:.8f}".format(test_err / test_batches))
 	logTraining(logFile, "  test accuracy:\t\t{:.4f} %".format(test_acc / test_batches * 100))
 	logTraining(logFile, "  test play accuracy:\t\t{:.4f} %".format(test_playAcc / test_batches * 100))
-	logFile.close()
+	logFile.close()'''
 
-def loadLasagneParams(network, fileName):
-	npFile = np.load("data/"+fileName)
-	inParams = npFile['arr_0']
-	#for i in range(len(npFile.files)):
-	#	inParams.append(npFile['arr_{}'.format(i)])
 
-	for i, layer in enumerate(lasagne.layers.get_all_layers(network['output'])):
-		lasagne.layers.set_all_param_values(layer, inParams[i])
 
-def buildNetwork(loadParams=False):
-	model = AttentionSeq2seq(
-		input_dim=NSE_ENCODED_SIZE,
-		input_length=N_INPUT_UNITS,
-		hidden_dim=50,
-		output_length=N_OUTPUT_UNITS,
-		output_dim=NSE_ENCODED_SIZE,
-		depth=2,
-		bidirectional=False
-	)
 
-	if type(loadParams) == str:
-		model.load_weights(loadParams)
-
-	model.compile(optimizer='adam', loss='mse')
-	return model
-
-def trainNetwork(model, nse):
-	print("Loading music dataset...")
-	trainInput, valInput, trainOutput, valOutput = loadDataset(nse)
-
-	print("Starting network training...")
-	checkpointer = keras.callbacks.ModelCheckpoint(filepath="data/best.w", verbose=0, save_best_only=True)
-
-	model.fit(trainInput, trainOutput,
-		batch_size=GPU_BATCH_SIZE,
-		nb_epoch=TRAIN_EPOCHS,
-		verbose=2,
-		callbacks=[checkpointer],
-		validation_data=(valInput, valOutput),
-		shuffle=True)
 
 '''def buildNoteStateEncoder():
 input = Input(shape=(PITCH_COUNT))

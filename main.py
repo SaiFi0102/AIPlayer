@@ -46,21 +46,20 @@ if __name__ == '__main__':
 	create_directory("output") #For generated output
 
 	#NSE
-	print("Building note state encoder...")
-	nse = buildNoteStateEncoder()
+	#print("Building note state encoder...")
+	#nse = buildNoteStateEncoder()
 
-	print("Loading note state encoder params...")
-	loadLasagneParams(nse, "nse_best.npz")
+	#print("Loading note state encoder params...")
+	#loadLasagneParams(nse, "nse_best.npz")
 
 	#print("Training note state encoder...")
 	#trainNoteStateEncoder(nse)
 
+	#testNoteStateEncoder(nse, "mz_311_1.mid")
+
 	#Network
 	print("Building network...")
 	network = buildNetwork(loadParams=False)
-
-	#print("Loading network params...")
-	#loadNetworkParams(network, "latest.npz")
 
 	print("Training network...")
 	trainNetwork(network, nse)
