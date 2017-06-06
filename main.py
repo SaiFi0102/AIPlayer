@@ -45,46 +45,33 @@ if __name__ == '__main__':
 	create_directory("data") #For trained weights and states
 	create_directory("output") #For generated output
 
-	#NSE
-	#print("Building note state encoder...")
-	#nse = buildNoteStateEncoder()
-
-	#print("Loading note state encoder params...")
-	#loadLasagneParams(nse, "nse_best.npz")
-
-	#print("Training note state encoder...")
-	#trainNoteStateEncoder(nse)
-
-	#testNoteStateEncoder(nse, "mz_311_1.mid")
-
 	#Network
 	print("Building network...")
-	network = buildNetwork(loadParams=False)
+	network = buildNetwork(loadParams=False, loadSerialized=False)
 
 	print("Training network...")
-	trainNetwork(network, nse)
+	trainNetwork(network)
 
 	#print("Generating midi file")
 	#generateFromRandomSequence(network, "test.mid")
 
 #OLD AND COMMENTED OUT
-if 0:
-	cf = mido.MidiFile("music/chromatic.mid")
-	data = midiTracksToInputData(cf)
-	track = outputDataToMidiTrack(data)
+'''cf = mido.MidiFile("music/chromatic.mid")
+data = midiTracksToInputData(cf)
+track = outputDataToMidiTrack(data)
 
-	nf = mido.MidiFile()
-	nf.ticks_per_beat = OUTPUT_TICKS_PER_BEAT
-	nf.tracks.append(track)
-	nf.save("music/pass.mid")
+nf = mido.MidiFile()
+nf.ticks_per_beat = OUTPUT_TICKS_PER_BEAT
+nf.tracks.append(track)
+nf.save("music/pass.mid")
 
-	print nf.tracks[0]
+print nf.tracks[0]
 
-	while True:
-		print("Enter:")
-		print("1: Train network")
-		print("2: Generate midi file from a random midi segment")
-		try:
-			command = int(raw_input('Input:'))
-		except ValueError:
-			print "Not a number"
+while True:
+	print("Enter:")
+	print("1: Train network")
+	print("2: Generate midi file from a random midi segment")
+	try:
+		command = int(raw_input('Input:'))
+	except ValueError:
+		print "Not a number"'''

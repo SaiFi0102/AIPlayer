@@ -12,7 +12,7 @@ PITCH_OCTAVES = 5 # Upperbound: B6
 PITCH_COUNT = len(NOTES) * PITCH_OCTAVES
 PITCH_UPPERBOUND = PITCH_LOWERBOUND + PITCH_COUNT - 1
 
-N_INPUT_TIME = 2 * 1000 * 1000 # seconds * (microseconds)
+N_INPUT_TIME = 500 * 1000 #In microseconds
 N_OUTPUT_TIME = 500 * 1000
 N_OUTPUT_UNITS = int(math.ceil(float(N_OUTPUT_TIME) / RESOLUTION_TIME))
 N_INPUT_UNITS = int(math.ceil(float(N_INPUT_TIME) / RESOLUTION_TIME))
@@ -20,13 +20,10 @@ N_FIXED_BATCH_SIZE = None
 N_CHANNELS = 1
 N_PLAY_THRESHOLD = 0.5
 
-NSE_BATCH_SIZE = 25000
-NSE_ENCODED_SIZE = 20
+NSE_ENCODED_SIZE = 30
 
-GPU_BATCH_SIZE = 500
+GPU_BATCH_SIZE = 100
 TRAIN_EPOCHS = 500
-TRAIN_DATASET_STEP_FACTOR = 1
-TRAIN_DATASET_STEP = int(N_INPUT_UNITS * TRAIN_DATASET_STEP_FACTOR)
 
 OUTPUT_DURATION = 180 #In seconds
 OUTPUT_DURATION_US = OUTPUT_DURATION * 1000 * 1000
@@ -41,9 +38,6 @@ print("Network output timesteps: " + str(N_OUTPUT_UNITS*RESOLUTION_TIME/1000.) +
 print("Output midi duration: " + str(OUTPUT_DURATION/60) + "min (" + str(OUTPUT_DURATION_UNITS) + " units)")
 print("GPU batch size: " + str(GPU_BATCH_SIZE) + " units")
 print("======================")
-
-assert(TRAIN_DATASET_STEP >= N_OUTPUT_UNITS)
-assert(N_OUTPUT_UNITS <= N_INPUT_UNITS)
 
 #Training is repeated TRAIN_EPOCHS times
 #Training is in batches

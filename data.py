@@ -120,67 +120,30 @@ def outputDataToMidiTrack(data):
 	#track.append(mido.MetaMessage('end_of_track', time=0))
 	return track
 
-def loadNseDataset():
+def loadDataset():
 	midiFileNames = [name for name in os.listdir(TRAIN_MUSIC_FOLDER) if name[-4:] in ('.mid','.MID')]
 	fileCount = 0
-	all = []
-
-	for fName in midiFileNames:
-		with mido.MidiFile(os.path.join(TRAIN_MUSIC_FOLDER, fName)) as midiFile:
-			piece = midiTracksToInputData(midiFile)
-			all.extend(piece)
-			fileCount += 1
-	print("{} midi files loaded".format(fileCount))
-
-	extra = len(all) % NSE_BATCH_SIZE
-	for _ in range(extra):
-		all.pop()
-
-	all = np.array(all, dtype="float32")
-	all = all.reshape(-1, NSE_BATCH_SIZE, PITCH_COUNT)
-
-	numBatches = len(all)
-	assert(numBatches >= 3)
-	numTrain = int(round(numBatches * 0.7))
-	numVal = numBatches - numTrain
-
-	print("Number of batches: {}".format(numBatches))
-	print("Number of training batches: {}".format(numTrain))
-	print("Number of validation batches: {}".format(numVal))
-
-	nseTrain, nseVal = all[:numTrain], all[numTrain:]
-	return nseTrain, nseVal
-
-def loadDataset(nse):
-	pieceMinimumSegmentUnits = N_INPUT_UNITS + N_OUTPUT_UNITS
-	midiFileNames = [name for name in os.listdir(TRAIN_MUSIC_FOLDER) if name[-4:] in ('.mid','.MID')]
-	fileCount = 0
+	allFiles = []
 	input = []
 	output = []
 
-	encode_fn = theano.function([nse['input'].input_var], lasagne.layers.get_output(nse['encoded']))
-	#decode_fn = theano.function([nse['encodedInput'].input_var], lasagne.layers.get_output(nse['decoderOutput']))
-
 	for fName in midiFileNames:
 		with mido.MidiFile(os.path.join(TRAIN_MUSIC_FOLDER, fName)) as midiFile:
 			piece = midiTracksToInputData(midiFile)
-			if len(piece) < pieceMinimumSegmentUnits:
+			if len(piece) < N_INPUT_UNITS + N_OUTPUT_UNITS:
 				print("Piece {} not loaded because it's not long enough".format(fName))
 				continue
 
-			encodedPiece = encode_fn(piece)
-
-			timeUnitLapsed = 0
-			while timeUnitLapsed < len(encodedPiece):
-				#If remianing data does not have enough for a whole minibatch then discard it
-				if len(encodedPiece) - timeUnitLapsed < pieceMinimumSegmentUnits:
-					break
-
-				input.append(encodedPiece[timeUnitLapsed:timeUnitLapsed + N_INPUT_UNITS])
-				output.append(encodedPiece[timeUnitLapsed + N_INPUT_UNITS : timeUnitLapsed + N_INPUT_UNITS + N_OUTPUT_UNITS])
-				timeUnitLapsed += TRAIN_DATASET_STEP
+			allFiles.append(piece)
 			fileCount += 1
 	print("{} midi files loaded".format(fileCount))
+
+	for file in allFiles:
+		timeUnitLapsed = 0
+		while timeUnitLapsed + N_INPUT_UNITS + N_OUTPUT_UNITS < len(piece):
+			input.append(piece[timeUnitLapsed:timeUnitLapsed + N_INPUT_UNITS])
+			output.append(piece[timeUnitLapsed + N_INPUT_UNITS : timeUnitLapsed + N_INPUT_UNITS + N_OUTPUT_UNITS])
+			timeUnitLapsed += N_INPUT_UNITS
 
 	extra = len(input) % GPU_BATCH_SIZE
 	for _ in range(extra):
@@ -204,6 +167,7 @@ def loadDataset(nse):
 	outputTimeUnits = int(output.shape[0] * output.shape[1])
 	outputTrainTimeUnits = int(outputTrain.shape[0] * outputTrain.shape[1])
 
+	print("")
 	print("Total input duration: {}min ({} units)".format(inputTimeUnits*RESOLUTION_TIME/1000./1000/60, inputTimeUnits))
 	print("Total output duration: {}min ({} units)".format(outputTimeUnits*RESOLUTION_TIME/1000./1000/60, outputTimeUnits))
 	print("Training input duration: {}min ({} units)".format(inputTrainTimeUnits*RESOLUTION_TIME/1000./1000/60, inputTrainTimeUnits))
@@ -212,29 +176,6 @@ def loadDataset(nse):
 	print("Number of batches: {}".format(numBatches))
 	print("Number of training batches: {}".format(numTrain))
 	print("Number of validation batches: {}".format(numVal))
+	print("")
 
 	return inputTrain, inputVal, outputTrain, outputVal
-
-def testNoteStateEncoder(nse, inputFileName):
-	encode_fn = theano.function([nse['input'].input_var], lasagne.layers.get_output(nse['output']))
-
-	midiFile = mido.MidiFile(os.path.join(TRAIN_MUSIC_FOLDER, inputFileName))
-	input = midiTracksToInputData(midiFile)
-
-	output = encode_fn(input)
-	outputTrack = outputDataToMidiTrack(output)
-	print outputTrack
-	outputMidiFile = mido.MidiFile()
-	outputMidiFile.tracks.append(outputTrack)
-	outputMidiFile.save("output/nse_test_" + inputFileName)
-
-def iterateBatches(inputs, outputs, shuffle):
-	assert len(inputs) > 0
-	assert len(inputs) == len(outputs)
-
-	indices = np.arange(len(inputs))
-	if shuffle:
-		np.random.shuffle(indices)
-
-	for batch in indices:
-		yield inputs[batch], outputs[batch]
