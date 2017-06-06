@@ -67,3 +67,4 @@ music_dev/*
 input/*
 output/*
 *.sublime-*
+.idea/*
