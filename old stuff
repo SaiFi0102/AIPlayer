@@ -1,0 +1,36 @@
+#OLD AND COMMENTED OUT
+'''cf = mido.MidiFile("music/chromatic.mid")
+data = midiTracksToInputData(cf)
+track = outputDataToMidiTrack(data)
+
+nf = mido.MidiFile()
+nf.ticks_per_beat = OUTPUT_TICKS_PER_BEAT
+nf.tracks.append(track)
+nf.save("music/pass.mid")
+
+print nf.tracks[0]
+
+while True:
+	print("Enter:")
+	print("1: Train network")
+	print("2: Generate midi file from a random midi segment")
+	try:
+		command = int(raw_input('Input:'))
+	except ValueError:
+		print "Not a number"'''
+
+
+'''
+	#chpn-p3.mid
+	#elise.mid
+	#mond_1.mid
+
+	with mido.MidiFile(os.path.join("music_all", "chpn-p3.mid")) as midiFile:
+		noteStateSeq = midoFileToNoteStateSeq(midiFile)
+
+	outputMidiFile = mido.MidiFile()
+	midiTrack = noteStateSeqToMidiTrack(noteStateSeq)
+	print(midiTrack)
+	outputMidiFile.tracks.append(midiTrack)
+	outputMidiFile.save("output/test.mid")
+'''

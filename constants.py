@@ -1,22 +1,20 @@
 import math, mido
 
-#DEBUG = True
 TRAIN_MUSIC_FOLDER = "music_dev"
 NOTES = ["A", "A#", "B", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#"]
-RESOLUTION_TIME = 10000 # In microseconds
+RESOLUTION_TIME = 0.01 * 1000 * 1000 # In microseconds
 OUTPUT_TICKS_PER_BEAT = 500
 OUTPUT_TEMPO = mido.bpm2tempo(120)
 OUTPUT_RESOLUTION_TIME = OUTPUT_TEMPO / OUTPUT_TICKS_PER_BEAT
-PITCH_LOWERBOUND = 24 # C1 (Midi note value)
+PITCH_LOWERBOUND = 24 # C2 (Midi note value)
 PITCH_OCTAVES = 5 # Upperbound: B6
 PITCH_COUNT = len(NOTES) * PITCH_OCTAVES
 PITCH_UPPERBOUND = PITCH_LOWERBOUND + PITCH_COUNT - 1
 
-N_INPUT_TIME = 500 * 1000 #In microseconds
+N_INPUT_TIME = 0.5 * 1000 * 1000 #In microseconds
 N_OUTPUT_TIME = 500 * 1000
-N_OUTPUT_UNITS = int(math.ceil(float(N_OUTPUT_TIME) / RESOLUTION_TIME))
-N_INPUT_UNITS = int(math.ceil(float(N_INPUT_TIME) / RESOLUTION_TIME))
-N_FIXED_BATCH_SIZE = None
+N_OUTPUT_UNITS = int(math.ceil(N_OUTPUT_TIME / RESOLUTION_TIME))
+N_INPUT_UNITS = int(math.ceil(N_INPUT_TIME / RESOLUTION_TIME))
 N_CHANNELS = 1
 N_PLAY_THRESHOLD = 0.5
 
@@ -27,9 +25,9 @@ TRAIN_EPOCHS = 500
 
 OUTPUT_DURATION = 180 #In seconds
 OUTPUT_DURATION_US = OUTPUT_DURATION * 1000 * 1000
-OUTPUT_DURATION_UNITS = OUTPUT_DURATION_US / RESOLUTION_TIME
+OUTPUT_DURATION_UNITS = int(OUTPUT_DURATION_US / RESOLUTION_TIME)
 
-print("Resolution Time: " + str(RESOLUTION_TIME/1000.) + "ms")
+print("Resolution Time: " + str(RESOLUTION_TIME/1000) + "ms")
 print("Pitch lowerbound: " + str(PITCH_LOWERBOUND))
 print("Pitch upperbound: " + str(PITCH_UPPERBOUND))
 print("Pitch count: " + str(PITCH_COUNT))

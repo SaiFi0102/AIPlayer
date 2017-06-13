@@ -1,14 +1,7 @@
-import theano, keras, seq2seq, lasagne, collections, time
-import theano.tensor as T
+import tensorflow as tf
 import numpy as np
-from theano.ifelse import ifelse
 from constants import *
 from data import *
-from keras.models import Sequential, model_from_json
-from keras.layers import Dense, TimeDistributedDense, Activation
-from seq2seq.models import AttentionSeq2seq
-#from seq2seq.layers.encoders import LSTMEncoder
-#from seq2seq.layers.decoders import AttentionDecoder
 
 def buildNetwork(loadSerialized=False, loadParams=False):
 	if type(loadSerialized) == str:
@@ -59,3 +52,41 @@ def trainNetwork(model):
 		callbacks=[checkpointer],
 		validation_data=(valInput, valOutput),
 		shuffle=False)
+
+
+'''def generateFromRandomSequence(network, outputFileName):
+	inputVar = network['input'].input_var
+	predictionExpr = lasagne.layers.get_output(network['output'])
+	predict_fn = theano.function([inputVar], predictionExpr)
+
+	midiFileNames = [name for name in os.listdir("input") if name[-4:] in ('.mid','.MID')]
+	fileName = random.choice(midiFileNames)
+
+	print("Loading input midi file {}".format(fileName))
+	midiFile = mido.MidiFile(os.path.join("input", fileName))
+	data = midiTracksToInputData(midiFile)
+	start = random.randrange(0, len(data)-N_INPUT_UNITS)
+
+	previousInput = data[start:start+N_INPUT_UNITS]
+	previousInput = np.array(previousInput, dtype="float32")
+	previousInput.shape = (1, 1, previousInput.shape[0], previousInput.shape[1], previousInput.shape[2])
+
+	outputData = np.zeros((OUTPUT_DURATION_UNITS, PITCH_OCTAVES, len(NOTES)), dtype="float32")
+	outputData[:N_INPUT_UNITS] = previousInput
+
+	for timeUnitLapsed in range(N_INPUT_UNITS, OUTPUT_DURATION_UNITS - N_OUTPUT_UNITS, N_OUTPUT_UNITS):
+		prediction = predict_fn(previousInput)
+		prediction = np.greater_equal(prediction, N_PLAY_THRESHOLD)
+		prediction = prediction.reshape(N_OUTPUT_UNITS, PITCH_OCTAVES, len(NOTES))
+
+		timeUnitIncludingPrediction = timeUnitLapsed + N_OUTPUT_UNITS
+		outputData[timeUnitLapsed:timeUnitIncludingPrediction] = prediction
+
+		previousInput = outputData[timeUnitIncludingPrediction - N_INPUT_UNITS:timeUnitIncludingPrediction]
+		previousInput.shape = (1, 1, N_INPUT_UNITS, PITCH_OCTAVES, len(NOTES))
+
+	outputMidiFile = mido.MidiFile()
+	midiTrack = outputDataToMidiTrack(outputData)
+	print midiTrack
+	outputMidiFile.tracks.append(midiTrack)
+	outputMidiFile.save("output/"+outputFileName)'''
