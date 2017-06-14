@@ -1,8 +1,10 @@
 import math, mido
 
-TRAIN_MUSIC_FOLDER = "music_dev"
+TRAIN_MUSIC_FOLDER = "music_all"
+DATA_FOLDER = "data"
 NOTES = ["A", "A#", "B", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#"]
-RESOLUTION_TIME = 0.01 * 1000 * 1000 # In microseconds
+RESOLUTION_TIME = 50 * 1000 # In microseconds represents 1 time unit
+FILE_GAP_TIME = 500 # In milliseconds
 OUTPUT_TICKS_PER_BEAT = 500
 OUTPUT_TEMPO = mido.bpm2tempo(120)
 OUTPUT_RESOLUTION_TIME = OUTPUT_TEMPO / OUTPUT_TICKS_PER_BEAT
@@ -12,16 +14,20 @@ PITCH_COUNT = len(NOTES) * PITCH_OCTAVES
 PITCH_UPPERBOUND = PITCH_LOWERBOUND + PITCH_COUNT - 1
 
 N_INPUT_TIME = 0.5 * 1000 * 1000 #In microseconds
-N_OUTPUT_TIME = 500 * 1000
+N_OUTPUT_TIME = 0.5 * 1000 * 1000
 N_OUTPUT_UNITS = int(math.ceil(N_OUTPUT_TIME / RESOLUTION_TIME))
 N_INPUT_UNITS = int(math.ceil(N_INPUT_TIME / RESOLUTION_TIME))
 N_CHANNELS = 1
 N_PLAY_THRESHOLD = 0.5
 
-NSE_ENCODED_SIZE = 30
+N_BATCH_SIZE = 100
+N_TRAIN_EPOCHS = 500
 
-GPU_BATCH_SIZE = 100
-TRAIN_EPOCHS = 500
+W2V_SIZE = 50
+W2V_BATCH_SIZE = 8
+W2V_NUM_SKIPS = 2
+W2V_SKIP_WINDOW = 1
+W2V_TRAIN_EPOCHS = 100
 
 OUTPUT_DURATION = 180 #In seconds
 OUTPUT_DURATION_US = OUTPUT_DURATION * 1000 * 1000
@@ -34,7 +40,7 @@ print("Pitch count: " + str(PITCH_COUNT))
 print("Network input timesteps: " + str(N_INPUT_TIME/1000./1000) + "s (" + str(N_INPUT_UNITS) + " units)" )
 print("Network output timesteps: " + str(N_OUTPUT_UNITS*RESOLUTION_TIME/1000.) + "ms (" + str(N_OUTPUT_UNITS) + " units)" )
 print("Output midi duration: " + str(OUTPUT_DURATION/60) + "min (" + str(OUTPUT_DURATION_UNITS) + " units)")
-print("GPU batch size: " + str(GPU_BATCH_SIZE) + " units")
+print("GPU batch size: " + str(N_BATCH_SIZE) + " units")
 print("======================")
 
 #Training is repeated TRAIN_EPOCHS times

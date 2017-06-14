@@ -1,13 +1,27 @@
 import numpy as np
-import mido, os
+import mido, os, collections
+import pickle
 from hashable import hashable
+from itertools import compress
+from functions import create_directory
 from constants import *
+
+###################
+# Utility functions
+###################
 
 def midiNoteToInputIndex(midiNote):
 	return midiNote - PITCH_LOWERBOUND
 
 def inputIndexToMidiNote(note):
 	return PITCH_LOWERBOUND + note
+
+def millisecondsToTimeUnits(time):
+	return int(math.ceil(time / (RESOLUTION_TIME / 1000)))
+
+#####################################
+# MIDI file extraction and generation
+#####################################
 
 def midoFileToTempoMap(midoFile):
 	tempoMap = {}
@@ -134,6 +148,7 @@ def musicFolderToNoteStateSeq(path):
 				continue
 
 			seq.extend(fileSeq)
+			seq.extend(np.zeros((millisecondsToTimeUnits(FILE_GAP_TIME), PITCH_COUNT), dtype="float32"))
 			fileCount += 1
 
 	print("{} midi files loaded".format(fileCount))
@@ -168,6 +183,80 @@ def noteStateSeqToMidiTrack(noteStateSeq):
 	track.append(mido.MetaMessage('end_of_track', time=0))
 	return track
 
+######################################
+# Vocabulary extraction and generation
+######################################
+
+def loadVocabularyData(noteStateSeq):
+	print("Generating vocabulary data")
+	wordSeq = []
+	noteStateToWordIdx = {}
+	wordIdxToSortable = [] # 0=>noteState, 1=>count
+
+	#Fill in data
+	for currentState in noteStateSeq:
+		stateWrapper = hashable(currentState)
+		if stateWrapper in noteStateToWordIdx:
+			wordIdx = noteStateToWordIdx[stateWrapper]
+			wordIdxToSortable[wordIdx][1] += 1
+		else:
+			wordIdx = len(wordIdxToSortable)
+			noteStateToWordIdx[stateWrapper] = wordIdx
+			wordIdxToSortable.insert(wordIdx, [currentState, 1])
+
+	#Sort in descending order of the word counts and split variables
+	wordIdxToSortable = sorted(wordIdxToSortable, key=lambda k: k[1], reverse=True)
+	wordIdxToNoteState = [x[0] for x in wordIdxToSortable]
+	wordIdxToCount = [x[1] for x in wordIdxToSortable]
+	del wordIdxToSortable
+
+	#Update noteStateToWordIdx according to the new order
+	for wordIdx, noteState in enumerate(wordIdxToNoteState):
+		stateWrapper = hashable(noteState)
+		noteStateToWordIdx[stateWrapper] = wordIdx
+
+	#Create sequence of words from sequence of note states
+	for currentState in noteStateSeq:
+		stateWrapper = hashable(currentState)
+		wordIdx = noteStateToWordIdx[stateWrapper]
+		wordSeq.append(wordIdx)
+
+	assert(len(noteStateSeq) == len(wordSeq))
+	assert(len(wordIdxToNoteState) == len(wordIdxToCount) == len(noteStateToWordIdx))
+
+	print("Vocabulary size: {}".format(len(wordIdxToNoteState)))
+	print()
+
+	return wordSeq, noteStateToWordIdx, wordIdxToNoteState, wordIdxToCount
+
+def generateWord2VecBatch(wordSeq):
+	assert W2V_BATCH_SIZE % W2V_NUM_SKIPS == 0
+	assert W2V_NUM_SKIPS <= 2 * W2V_SKIP_WINDOW
+
+	batch = np.ndarray(shape=(W2V_BATCH_SIZE, W2V_NUM_SKIPS), dtype=np.int32)
+	labels = np.ndarray(shape=(W2V_BATCH_SIZE, 1), dtype=np.int32)
+	span = 2 * W2V_SKIP_WINDOW + 1  # [ skip_window target skip_window ]
+	buffer = collections.deque(maxlen=span)  # used for collecting data[data_index] in the sliding window
+
+	# Collect the first window of words
+	for _ in range(span):
+		buffer.append(wordSeq[generateWord2VecBatch.ctu])
+		generateWord2VecBatch.ctu = (generateWord2VecBatch.ctu + 1) % len(wordSeq)
+	# Move the sliding window
+	for i in range(W2V_BATCH_SIZE):
+		mask = [1] * span
+		mask[W2V_SKIP_WINDOW] = 0
+		batch[i, :] = list(compress(buffer, mask))  # all surrounding words
+		labels[i, 0] = buffer[W2V_SKIP_WINDOW]  # the word at the center
+		buffer.append(wordSeq[generateWord2VecBatch.ctu])
+		generateWord2VecBatch.ctu = (generateWord2VecBatch.ctu + 1) % len(wordSeq)
+	return batch, labels
+generateWord2VecBatch.ctu = 0
+
+####################
+# Dataset generation
+####################
+
 def loadInputOutputData(seq):
 	print("Splitting input/output data")
 
@@ -180,7 +269,7 @@ def loadInputOutputData(seq):
 		output.append(seq[timeUnitLapsed + N_INPUT_UNITS: timeUnitLapsed + N_INPUT_UNITS + N_OUTPUT_UNITS])
 		timeUnitLapsed += N_INPUT_UNITS
 
-	extra = len(input) % GPU_BATCH_SIZE
+	extra = len(input) % N_BATCH_SIZE
 	for _ in range(extra):
 		input.pop()
 		output.pop()
@@ -220,126 +309,57 @@ def loadDataset():
 
 	return inputTrain, inputVal, outputTrain, outputVal
 
-def loadVocabularyData(seq):
-	vocabCount = 0
-	noteStateToWordIdx = {}
-	wordIdxToNoteState = []
-	wordIdxToCount = []
+###########################
+# Cache dumping and loading
+###########################
 
-	print("Generating vocabulary data")
-	for currentState in seq:
-		stateWrapper = hashable(currentState)
-		if stateWrapper in noteStateToWordIdx:
-			wordIdx = noteStateToWordIdx[stateWrapper]
-			wordIdxToCount[wordIdx] += 1
-		else:
-			wordIdx = vocabCount
-			noteStateToWordIdx[stateWrapper] = wordIdx
-			wordIdxToNoteState.insert(wordIdx, currentState)
-			wordIdxToCount.insert(wordIdx, 1)
-			vocabCount += 1
-	print("Vocabulary size: {}".format(vocabCount))
-	print()
+def createCacheData(outputFile="cachedData.npz"):
+	print("Creating data cache")
+	print("===================")
+	assert(outputFile[-4:] == ".npz")
+	outputPickleFile = outputFile[:-4] + ".pickle"
+	outputPickleFile = os.path.join(DATA_FOLDER, outputPickleFile)
+	outputFile = os.path.join(DATA_FOLDER, outputFile)
 
-	return noteStateToWordIdx, wordIdxToNoteState, wordIdxToCount
+	#Prevent overwriting
+	assert(not os.path.isfile(outputFile))
+	assert(not os.path.isfile(outputPickleFile))
 
-'''
-def midoFileToNoteStateSeq(midoFile):
-	assert (midoFile.type != 2)
-	tempoMap = midoFileToTempoMap(midoFile)
-	print(tempoMap)
-	tracks = []
-	for track in midoFile.tracks:
-		# Initialize variables for each track
-		tracks.append([])
-		ticksLapsed = 0
-		timeLapsed = 0
-		tempoIndex = 0
-		isPercussion = False
-		tickResolutionInUs = mido.bpm2tempo(120) / midoFile.ticks_per_beat  # Intial tempo/tick resolution
-		currentTrackNotesState = np.zeros(PITCH_COUNT, dtype="float32")  # All notes off
+	create_directory(DATA_FOLDER)
+	noteStateSeq = musicFolderToNoteStateSeq(TRAIN_MUSIC_FOLDER)
+	wordSeq, noteStateToWordIdx, wordIdxToNoteState, wordIdxToCount = loadVocabularyData(noteStateSeq)
 
-		# Set the first nextTempoEvent
-		nextTempoEvent = None
-		if tempoMap:
-			nextTempoEvent = tempoMap[tempoIndex]
+	np.savez(outputFile,
+			 noteStateSeq=noteStateSeq,
+			 wordSeq=wordSeq,
+			 wordIdxToNoteState=wordIdxToNoteState,
+			 wordIdxToCount=wordIdxToCount)
+	pickle.dump(noteStateToWordIdx, open(outputPickleFile, "wb"))
+	print("Data cache created: {} and {}".format(outputFile, outputPickleFile))
 
-		for event in track:
-			# Check if there is a tempo event, update tempo and the next tempo event var
-			if nextTempoEvent is not None and ticksLapsed >= nextTempoEvent[0]:
-				tickResolutionInUs = nextTempoEvent[1] / midoFile.ticks_per_beat
-				tempoIndex = tempoIndex + 1
-				if len(tempoMap) > tempoIndex:
-					nextTempoEvent = tempoMap[tempoIndex]
-				else:
-					nextTempoEvent = None
+def loadCacheData(inputFile="cachedData.npz"):
+	print("Loading from data cache")
+	assert(inputFile[-4:] == ".npz")
+	inputPickleFile = inputFile[:-4] + ".pickle"
+	inputPickleFile = os.path.join(DATA_FOLDER, inputPickleFile)
+	inputFile = os.path.join(DATA_FOLDER, inputFile)
 
-			# Update ticks
-			ticksLapsed += event.time
-			deltaTime = event.time * tickResolutionInUs
-			timeLapsed += deltaTime
-			timeUnitsLapsed = timeLapsed / RESOLUTION_TIME
-			currentTimeUnit = int(timeUnitsLapsed)
+	cache = np.load(inputFile)
+	noteStateSeq = cache['noteStateSeq']
+	wordSeq = cache['wordSeq']
+	wordIdxToNoteState = cache['wordIdxToNoteState']
+	wordIdxToCount = cache['wordIdxToCount']
 
-			# Ignore percussion instrument segments
-			if event.type == 'program_change':
-				if event.program >= 113 and event.program <= 120:
-					isPercussion = True
-				else:
-					isPercussion = False
-			if isPercussion:
-				continue
+	noteStateToWordIdx = pickle.load(open(inputPickleFile, "rb"))
 
-			# Copy previous notes state values to data before updating notes state
-			if currentTimeUnit > len(tracks[-1]):
-				for i in range(currentTimeUnit - len(
-						tracks[-1])):  # Number of units required to insert before currentTimeUnit
-					tracks[-1].append(np.copy(currentTrackNotesState))
+	assert(len(noteStateSeq) == len(wordSeq))
+	assert(len(wordIdxToNoteState) == len(wordIdxToCount) == len(noteStateToWordIdx))
 
-			# Determine event
-			noteEvent = False
-			if event.type == 'note_on':
-				noteEvent = True
-				noteState = True
-			if event.type == 'note_off':
-				noteEvent = True
-				noteState = False
+	print("Music sequence length: {}".format(len(noteStateSeq)))
+	print("Vocabulary size: {}".format(len(wordIdxToNoteState)))
 
-			if noteEvent and event.note >= PITCH_LOWERBOUND and event.note <= PITCH_UPPERBOUND:
-				# Determine all note events with 0 velocity as note_off
-				if event.velocity == 0:
-					noteState = False
+	return noteStateSeq, wordSeq, noteStateToWordIdx, wordIdxToNoteState, wordIdxToCount
 
-				# Update current note state
-				note = midiNoteToInputIndex(event.note)
-				currentTrackNotesState[note] += np.float32(noteState)
-
-				# Add the current note state data
-				tracks[-1].append(np.copy(currentTrackNotesState))
-
-	# Remove empty tracks
-	tracks = [t for t in tracks if len(t) != 0]
-
-	# Length of the longest track
-	maxLen = 0
-	for t in tracks:
-		if len(t) > maxLen:
-			maxLen = len(t)
-
-	# Normalize length
-	for t in tracks:
-		if len(t) == 0:
-			continue
-		while len(t) < maxLen:
-			t.append(np.zeros(PITCH_COUNT, dtype="float32"))
-
-	tracks = np.array(tracks)
-	data = tracks.sum(0)
-
-	for timeUnit in range(1, len(data) - 1):
-		for note, noteState in enumerate(data[timeUnit]):
-			if noteState > 0 and noteState > data[timeUnit - 1][note]:
-				data[timeUnit - 1][note] = np.float32(0)
-	data = data.clip(0, 1)
-	return data
-'''
+#MAIN
+if __name__ == '__main__':
+	createCacheData()
