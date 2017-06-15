@@ -1,6 +1,5 @@
 import numpy as np
-import mido, os, collections
-import pickle
+import mido, collections, pickle, io, os
 from hashable import hashable
 from itertools import compress
 from functions import create_directory
@@ -183,6 +182,16 @@ def noteStateSeqToMidiTrack(noteStateSeq):
 	track.append(mido.MetaMessage('end_of_track', time=0))
 	return track
 
+def noteStateSeqToMidiStream(noteStateSeq):
+	midiFile = mido.MidiFile()
+	midiTrack = noteStateSeqToMidiTrack(noteStateSeq)
+	midiFile.tracks.append(midiTrack)
+
+	stream = io.BytesIO()
+	midiFile.save(file=stream)
+	stream.seek(0)
+	return stream
+
 ######################################
 # Vocabulary extraction and generation
 ######################################
@@ -252,6 +261,17 @@ def generateWord2VecBatch(wordSeq):
 		generateWord2VecBatch.ctu = (generateWord2VecBatch.ctu + 1) % len(wordSeq)
 	return batch, labels
 generateWord2VecBatch.ctu = 0
+
+def wordsToDemonstrationMidiStream(words, wordIdxToNoteState, sustain=1000):
+	sustainTimeUnits = millisecondsToTimeUnits(sustain)
+	assert(sustainTimeUnits >= 2)
+	noteStateSeq = []
+	for wordIdx in words:
+		noteStates = wordIdxToNoteState[wordIdx]
+		for _ in range(sustainTimeUnits-1):
+			noteStateSeq.append(noteStates)
+		noteStateSeq.append(np.zeros(PITCH_COUNT, dtype="float32"))
+	return noteStateSeqToMidiStream(noteStateSeq)
 
 ####################
 # Dataset generation
