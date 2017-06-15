@@ -100,13 +100,16 @@ def plot(embeddings, labels):
 	xs = []
 	ys = []
 	wordIdxs = []
+	collections = []
 	for i, label in enumerate(labels):
 		x, y = embeddings[i,:]
 		xs.append(x)
 		ys.append(y)
+		artist = ax.scatter(x, y, picker=True)
+		collections.append(artist)
 		wordIdxs.append(label)
-	scat = ax.scatter(xs, ys, picker=True)
-	DataCursor(scat, xs, ys, wordIdxs)
+
+	DataCursor(collections, xs, ys, wordIdxs)
 	pylab.show()
 
 #MODEL
@@ -194,13 +197,13 @@ with tf.Session(graph=graph) as session:
 	pygame.mixer.music.load(stream)
 	pygame.mixer.music.play()
 
+	#Plot
 	final_embeddings = normalized_embeddings.eval()
 	num_points = 800
 	tsne = TSNE(perplexity=30, n_components=2, init='pca', n_iter=5000)
 	two_d_embeddings = tsne.fit_transform(final_embeddings[1:num_points + 1, :])
 	words = list(range(1, num_points + 1))
 	plot(two_d_embeddings, words)
-
 
 while pygame.mixer.music.get_busy():
 	continue
