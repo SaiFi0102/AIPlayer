@@ -18,6 +18,9 @@ def inputIndexToMidiNote(note):
 def millisecondsToTimeUnits(time):
 	return int(math.ceil(time / (RESOLUTION_TIME / 1000)))
 
+def timeUnitsToMilliseconds(timeUnits):
+	return timeUnits * RESOLUTION_TIME / 1000
+
 #####################################
 # MIDI file extraction and generation
 #####################################
@@ -134,7 +137,7 @@ def midoFileToNoteStateSeq(midoFile):
 	return seq
 
 def musicFolderToNoteStateSeq(path):
-	print("Loading midi data from music directory: {}".format(path))
+	print("Loading MIDI data from music directory: {}".format(path))
 
 	midiFileNames = [name for name in os.listdir(path) if name[-4:] in ('.mid', '.MID')]
 	seq = []
@@ -143,16 +146,18 @@ def musicFolderToNoteStateSeq(path):
 		with mido.MidiFile(os.path.join(path, fName)) as midiFile:
 			fileSeq = midoFileToNoteStateSeq(midiFile)
 			if len(fileSeq) < N_INPUT_UNITS + N_OUTPUT_UNITS:
-				print("File {} not loaded because it's not long enough".format(fName))
+				print("MIDI file {} not loaded because it's not long enough".format(fName))
 				continue
 
 			seq.extend(fileSeq)
 			seq.extend(np.zeros((millisecondsToTimeUnits(FILE_GAP_TIME), PITCH_COUNT), dtype="float32"))
 			fileCount += 1
 
-	print("{} midi files loaded".format(fileCount))
-	print()
-	return seq
+	print("MIDI files loaded: {}".format(fileCount))
+	print("Music sequence length: {} units".format(len(seq)))
+	print("Music sequence duration: {} hours".format(timeUnitsToMilliseconds(len(seq)) / 1000 / 60 / 60))
+	print("-------------------")
+	return np.asarray(seq)
 
 def noteStateSeqToMidiTrack(noteStateSeq):
 	track = mido.MidiTrack()
@@ -192,13 +197,22 @@ def noteStateSeqToMidiStream(noteStateSeq):
 	stream.seek(0)
 	return stream
 
+def vocabularyToMidiStream(noteStateList, sustain=1000):
+	sustainTimeUnits = millisecondsToTimeUnits(sustain)
+	assert(sustainTimeUnits >= 2)
+	noteStateSeq = []
+	for noteStates in noteStateList:
+		for _ in range(sustainTimeUnits-1):
+			noteStateSeq.append(noteStates)
+		noteStateSeq.append(np.zeros(PITCH_COUNT, dtype="float32"))
+	return noteStateSeqToMidiStream(noteStateSeq)
+
 ######################################
 # Vocabulary extraction and generation
 ######################################
 
 def loadVocabularyData(noteStateSeq):
 	print("Generating vocabulary data")
-	wordSeq = []
 	noteStateToWordIdx = {}
 	wordIdxToSortable = [] # 0=>noteState, 1=>count
 
@@ -215,63 +229,14 @@ def loadVocabularyData(noteStateSeq):
 
 	#Sort in descending order of the word counts and split variables
 	wordIdxToSortable = sorted(wordIdxToSortable, key=lambda k: k[1], reverse=True)
-	wordIdxToNoteState = [x[0] for x in wordIdxToSortable]
+	wordIdxToNoteState = np.asarray([x[0] for x in wordIdxToSortable])
 	wordIdxToCount = [x[1] for x in wordIdxToSortable]
 	del wordIdxToSortable
 
-	#Update noteStateToWordIdx according to the new order
-	for wordIdx, noteState in enumerate(wordIdxToNoteState):
-		stateWrapper = hashable(noteState)
-		noteStateToWordIdx[stateWrapper] = wordIdx
+	print("Vocabulary size: {} unique musical words".format(len(wordIdxToNoteState)))
+	print("-------------------")
 
-	#Create sequence of words from sequence of note states
-	for currentState in noteStateSeq:
-		stateWrapper = hashable(currentState)
-		wordIdx = noteStateToWordIdx[stateWrapper]
-		wordSeq.append(wordIdx)
-
-	assert(len(noteStateSeq) == len(wordSeq))
-	assert(len(wordIdxToNoteState) == len(wordIdxToCount) == len(noteStateToWordIdx))
-
-	print("Vocabulary size: {}".format(len(wordIdxToNoteState)))
-	print()
-
-	return wordSeq, noteStateToWordIdx, wordIdxToNoteState, wordIdxToCount
-
-def generateWord2VecBatch(wordSeq):
-	assert W2V_BATCH_SIZE % W2V_NUM_SKIPS == 0
-	assert W2V_NUM_SKIPS <= 2 * W2V_SKIP_WINDOW
-
-	batch = np.ndarray(shape=(W2V_BATCH_SIZE, W2V_NUM_SKIPS), dtype=np.int32)
-	labels = np.ndarray(shape=(W2V_BATCH_SIZE, 1), dtype=np.int32)
-	span = 2 * W2V_SKIP_WINDOW + 1  # [ skip_window target skip_window ]
-	buffer = collections.deque(maxlen=span)  # used for collecting data[data_index] in the sliding window
-
-	# Collect the first window of words
-	for _ in range(span):
-		buffer.append(wordSeq[generateWord2VecBatch.ctu])
-		generateWord2VecBatch.ctu = (generateWord2VecBatch.ctu + 1) % len(wordSeq)
-	# Move the sliding window
-	for i in range(W2V_BATCH_SIZE):
-		mask = [1] * span
-		mask[W2V_SKIP_WINDOW] = 0
-		batch[i, :] = list(compress(buffer, mask))  # all surrounding words
-		labels[i, 0] = buffer[W2V_SKIP_WINDOW]  # the word at the center
-		buffer.append(wordSeq[generateWord2VecBatch.ctu])
-		generateWord2VecBatch.ctu = (generateWord2VecBatch.ctu + 1) % len(wordSeq)
-	return batch, labels
-generateWord2VecBatch.ctu = 0
-
-def wordsToDemonstrationMidiStream(words, wordIdxToNoteState, sustain=1000):
-	sustainTimeUnits = millisecondsToTimeUnits(sustain)
-	assert(sustainTimeUnits >= 2)
-	noteStateSeq = []
-	for wordIdx in words:
-		noteStates = wordIdxToNoteState[wordIdx]
-		for _ in range(sustainTimeUnits-1):
-			noteStateSeq.append(noteStates)
-		noteStateSeq.append(np.zeros(PITCH_COUNT, dtype="float32"))
-	return noteStateSeqToMidiStream(noteStateSeq)
+	return wordIdxToNoteState, wordIdxToCount
 
 ####################
 # Dataset generation
@@ -295,8 +260,8 @@ def loadInputOutputData(seq):
 		output.pop()
 
 	assert(len(input) == len(output))  # Should have same number of batches
-	input = np.array(input, dtype="float32")
-	output = np.array(output, dtype="float32")
+	input = np.asarray(input, dtype="float32")
+	output = np.asarray(output, dtype="float32")
 
 	return input, output
 
@@ -325,7 +290,7 @@ def loadDataset():
 	print("Number of batches: {}".format(numBatches))
 	print("Number of training batches: {}".format(numTrain))
 	print("Number of validation batches: {}".format(numVal))
-	print()
+	print("-------------------")
 
 	return inputTrain, inputVal, outputTrain, outputVal
 
@@ -334,51 +299,41 @@ def loadDataset():
 ###########################
 
 def createCacheData(outputFile="cachedData.npz"):
-	print("Creating data cache")
-	print("===================")
-	assert(outputFile[-4:] == ".npz")
-	outputPickleFile = outputFile[:-4] + ".pickle"
-	outputPickleFile = os.path.join(DATA_FOLDER, outputPickleFile)
+	if outputFile.find('.') == -1:
+		outputFile += ".npz"
 	outputFile = os.path.join(DATA_FOLDER, outputFile)
 
 	#Prevent overwriting
 	assert(not os.path.isfile(outputFile))
-	assert(not os.path.isfile(outputPickleFile))
 
 	create_directory(DATA_FOLDER)
 	noteStateSeq = musicFolderToNoteStateSeq(TRAIN_MUSIC_FOLDER)
-	wordSeq, noteStateToWordIdx, wordIdxToNoteState, wordIdxToCount = loadVocabularyData(noteStateSeq)
+	wordIdxToNoteState, wordIdxToCount = loadVocabularyData(noteStateSeq)
 
+	print("Creating data cache")
+	print("-------------------")
 	np.savez(outputFile,
 			 noteStateSeq=noteStateSeq,
-			 wordSeq=wordSeq,
 			 wordIdxToNoteState=wordIdxToNoteState,
 			 wordIdxToCount=wordIdxToCount)
-	pickle.dump(noteStateToWordIdx, open(outputPickleFile, "wb"))
-	print("Data cache created: {} and {}".format(outputFile, outputPickleFile))
+	print("Data cache created: {}".format(outputFile))
 
 def loadCacheData(inputFile="cachedData.npz"):
 	print("Loading from data cache")
-	assert(inputFile[-4:] == ".npz")
-	inputPickleFile = inputFile[:-4] + ".pickle"
-	inputPickleFile = os.path.join(DATA_FOLDER, inputPickleFile)
-	inputFile = os.path.join(DATA_FOLDER, inputFile)
 
+	inputFile = os.path.join(DATA_FOLDER, inputFile)
 	cache = np.load(inputFile)
 	noteStateSeq = cache['noteStateSeq']
-	wordSeq = cache['wordSeq']
 	wordIdxToNoteState = cache['wordIdxToNoteState']
 	wordIdxToCount = cache['wordIdxToCount']
 
-	noteStateToWordIdx = pickle.load(open(inputPickleFile, "rb"))
+	assert(len(wordIdxToNoteState) == len(wordIdxToCount))
 
-	assert(len(noteStateSeq) == len(wordSeq))
-	assert(len(wordIdxToNoteState) == len(wordIdxToCount) == len(noteStateToWordIdx))
+	print("Music sequence length: {} units".format(len(noteStateSeq)))
+	print("Music sequence duration: {} hours".format(timeUnitsToMilliseconds(len(noteStateSeq)) / 1000 / 60 / 60))
+	print("Vocabulary size: {} unique musical words".format(len(wordIdxToNoteState)))
 
-	print("Music sequence length: {}".format(len(noteStateSeq)))
-	print("Vocabulary size: {}".format(len(wordIdxToNoteState)))
-
-	return noteStateSeq, wordSeq, noteStateToWordIdx, wordIdxToNoteState, wordIdxToCount
+	return noteStateSeq, wordIdxToNoteState, wordIdxToCount
 
 #MAIN
 if __name__ == '__main__':
