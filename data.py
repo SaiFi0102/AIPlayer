@@ -92,7 +92,7 @@ def midoFileToNoteStateSeq(midoFile):
 				if not currentTrackNoteState.all(0):
 					for i in range(previousTimeUnit+1, currentTimeUnit+1):
 						seq[i] = np.add(seq[i], currentTrackNoteState)
-						seq[i].clip(0, 1)
+						seq[i] = seq[i].clip(0, 1)
 
 			# Ignore percussion instrument segments
 			if event.type == 'program_change':
@@ -132,7 +132,7 @@ def midoFileToNoteStateSeq(midoFile):
 					seq[currentTimeUnit] = np.copy(currentTrackNoteState)
 				else:
 					seq[currentTimeUnit] = np.add(seq[currentTimeUnit], currentTrackNoteState)
-					seq[currentTimeUnit].clip(0, 1)
+					seq[currentTimeUnit] = seq[currentTimeUnit].clip(0, 1)
 
 	return seq
 
@@ -242,7 +242,7 @@ def loadVocabularyData(noteStateSeq):
 # Dataset generation
 ####################
 
-def loadInputOutputData(seq):
+def splitInputOutputSeq(seq):
 	print("Splitting input/output data")
 
 	input = []
@@ -265,8 +265,8 @@ def loadInputOutputData(seq):
 
 	return input, output
 
-def loadDataset():
-	input, output = loadInputOutputData()
+def seqToDataset(seq):
+	input, output = splitInputOutputSeq(seq)
 	print("Splitting train/validation data")
 
 	numBatches = len(input)
@@ -308,14 +308,11 @@ def createCacheData(outputFile="cachedData.npz"):
 
 	create_directory(DATA_FOLDER)
 	noteStateSeq = musicFolderToNoteStateSeq(TRAIN_MUSIC_FOLDER)
-	wordIdxToNoteState, wordIdxToCount = loadVocabularyData(noteStateSeq)
+	#wordIdxToNoteState, wordIdxToCount = loadVocabularyData(noteStateSeq)
 
 	print("Creating data cache")
 	print("-------------------")
-	np.savez(outputFile,
-			 noteStateSeq=noteStateSeq,
-			 wordIdxToNoteState=wordIdxToNoteState,
-			 wordIdxToCount=wordIdxToCount)
+	np.savez(outputFile, noteStateSeq=noteStateSeq)
 	print("Data cache created: {}".format(outputFile))
 
 def loadCacheData(inputFile="cachedData.npz"):
@@ -324,16 +321,11 @@ def loadCacheData(inputFile="cachedData.npz"):
 	inputFile = os.path.join(DATA_FOLDER, inputFile)
 	cache = np.load(inputFile)
 	noteStateSeq = cache['noteStateSeq']
-	wordIdxToNoteState = cache['wordIdxToNoteState']
-	wordIdxToCount = cache['wordIdxToCount']
-
-	assert(len(wordIdxToNoteState) == len(wordIdxToCount))
 
 	print("Music sequence length: {} units".format(len(noteStateSeq)))
 	print("Music sequence duration: {} hours".format(timeUnitsToMilliseconds(len(noteStateSeq)) / 1000 / 60 / 60))
-	print("Vocabulary size: {} unique musical words".format(len(wordIdxToNoteState)))
 
-	return noteStateSeq, wordIdxToNoteState, wordIdxToCount
+	return noteStateSeq
 
 #MAIN
 if __name__ == '__main__':
