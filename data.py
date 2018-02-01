@@ -1,9 +1,9 @@
 import numpy as np
-import mido, collections, pickle, io, os
+import mido, io, os
 from hashable import hashable
-from itertools import compress
 from functions import create_directory
 from constants import *
+import pygame
 
 ###################
 # Utility functions
@@ -45,7 +45,7 @@ def midoFileToNoteStateSeq(midoFile):
 		timeLapsed = 0
 		currentTimeUnit = 0
 		tempoIndex = 0
-		isPercussion = False
+		invalidProgram = False
 		tickResolutionInUs = mido.bpm2tempo(120) / midoFile.ticks_per_beat  # Intial tempo/tick resolution
 		currentTrackNoteState = np.zeros(PITCH_COUNT, dtype="float32")  # All notes off
 
@@ -96,12 +96,12 @@ def midoFileToNoteStateSeq(midoFile):
 
 			# Ignore percussion instrument segments
 			if event.type == 'program_change':
-				if event.program >= 113 and event.program <= 120:
-					isPercussion = True
+				if (event.program >= 0 and event.program <= 7) or (event.program >= 16 and event.program <= 31):
+					invalidProgram = False
 				else:
-					isPercussion = False
+					invalidProgram = True
 				continue
-			if isPercussion:
+			if invalidProgram:
 				continue
 
 			# Determine event
@@ -137,26 +137,33 @@ def midoFileToNoteStateSeq(midoFile):
 	return seq
 
 def musicFolderToNoteStateSeq(path):
+	print("======================================================");
 	print("Loading MIDI data from music directory: {}".format(path))
+	print("======================================================");
 
 	midiFileNames = [name for name in os.listdir(path) if name[-4:] in ('.mid', '.MID')]
 	seq = []
 	fileCount = 0
 	for fName in midiFileNames:
-		with mido.MidiFile(os.path.join(path, fName)) as midiFile:
-			fileSeq = midoFileToNoteStateSeq(midiFile)
-			if len(fileSeq) < N_INPUT_UNITS + N_OUTPUT_UNITS:
-				print("MIDI file {} not loaded because it's not long enough".format(fName))
-				continue
+		try:
+			with mido.MidiFile(os.path.join(path, fName)) as midiFile:
+				fileSeq = midoFileToNoteStateSeq(midiFile)
+				if len(fileSeq) < N_INPUT_UNITS + N_OUTPUT_UNITS:
+					print("MIDI file {} not loaded because it's not long enough".format(fName))
+					continue
 
-			seq.extend(fileSeq)
-			seq.extend(np.zeros((millisecondsToTimeUnits(FILE_GAP_TIME), PITCH_COUNT), dtype="float32"))
-			fileCount += 1
-
+				seq.extend(fileSeq)
+				seq.extend(np.zeros((millisecondsToTimeUnits(FILE_GAP_TIME), PITCH_COUNT), dtype="float32"))
+				fileCount += 1
+				print("LOADED: {}".format(fName))
+		except:
+			print("ERROR: {} could not be read".format(fName))
+			
+	print("---------------------------")
 	print("MIDI files loaded: {}".format(fileCount))
 	print("Music sequence length: {} units".format(len(seq)))
-	print("Music sequence duration: {} hours".format(timeUnitsToMilliseconds(len(seq)) / 1000 / 60 / 60))
-	print("-------------------")
+	print("Music sequence duration: %.1f hours" % (timeUnitsToMilliseconds(len(seq)) / 1000 / 60 / 60))
+	print()
 	return np.asarray(seq)
 
 def noteStateSeqToMidiTrack(noteStateSeq):
@@ -259,38 +266,45 @@ def splitInputOutputSeq(seq):
 		input.pop()
 		output.pop()
 
-	assert(len(input) == len(output))  # Should have same number of batches
+	assert(len(input) == len(output))  # Should have same number of samples
 	input = np.asarray(input, dtype="float32")
 	output = np.asarray(output, dtype="float32")
 
 	return input, output
 
 def seqToDataset(seq):
+	print("===============================")
 	input, output = splitInputOutputSeq(seq)
-	print("Splitting train/validation data")
+	assert(len(input) == len(output))
 
-	numBatches = len(input)
-	assert(numBatches >= 3)
-	numTrain = int(round(numBatches * 0.7))
-	numVal = numBatches - numTrain
+	print("Splitting train/validation data")
+	numSamples = len(input)
+	assert(numSamples >= 3)
+	numTrain = int(round(numSamples * (1-VALIDATION_DATA_RATIO)))
+	numVal = numSamples - numTrain
 
 	inputTrain, inputVal = input[:numTrain], input[numTrain:]
 	outputTrain, outputVal = output[:numTrain], output[numTrain:]
-
+	
 	inputTimeUnits = int(input.shape[0] * input.shape[1])
-	inputTrainTimeUnits = int(inputTrain.shape[0] * inputTrain.shape[1])
 	outputTimeUnits = int(output.shape[0] * output.shape[1])
+	inputTrainTimeUnits = int(inputTrain.shape[0] * inputTrain.shape[1])
 	outputTrainTimeUnits = int(outputTrain.shape[0] * outputTrain.shape[1])
+	inputValTimeUnits = int(inputVal.shape[0] * inputVal.shape[1])
+	outputValTimeUnits = int(outputVal.shape[0] * outputVal.shape[1])
 
-	print("Total input duration: {}min ({} units)".format(inputTimeUnits*RESOLUTION_TIME/1000/1000/60, inputTimeUnits))
-	print("Total output duration: {}min ({} units)".format(outputTimeUnits*RESOLUTION_TIME/1000/1000/60, outputTimeUnits))
-	print("Training input duration: {}min ({} units)".format(inputTrainTimeUnits*RESOLUTION_TIME/1000/1000/60, inputTrainTimeUnits))
-	print("Training output duration: {}min ({} units)".format(outputTrainTimeUnits*RESOLUTION_TIME/1000/1000/60, outputTrainTimeUnits))
+	print("===============================")
+	print("Total input duration: %.1f hours (%d units)" % (timeUnitsToMilliseconds(inputTimeUnits)/1000/60/60, inputTimeUnits))
+	print("Total output duration: %.1f hours (%d units)" % (timeUnitsToMilliseconds(outputTimeUnits)/1000/60/60, outputTimeUnits))
+	print("Training input duration: %.1f hours (%d units)" % (timeUnitsToMilliseconds(inputTrainTimeUnits)/1000/60/60, inputTrainTimeUnits))
+	print("Training output duration: %.1f hours (%d units)" % (timeUnitsToMilliseconds(outputTrainTimeUnits)/1000/60/60, outputTrainTimeUnits))
+	print("Validation input duration: %.1f hours (%d units)" % (timeUnitsToMilliseconds(inputValTimeUnits)/1000/60/60, inputValTimeUnits))
+	print("Validation output duration: %.1f hours (%d units)" % (timeUnitsToMilliseconds(outputValTimeUnits)/1000/60/60, outputValTimeUnits))
 	print()
-	print("Number of batches: {}".format(numBatches))
-	print("Number of training batches: {}".format(numTrain))
-	print("Number of validation batches: {}".format(numVal))
-	print("-------------------")
+	print("Total samples: {}".format(numSamples))
+	print("Training samples: {}".format(numTrain))
+	print("Validation samples: {}".format(numVal))
+	print()
 
 	return inputTrain, inputVal, outputTrain, outputVal
 
@@ -309,24 +323,39 @@ def createCacheData(outputFile="cachedData.npz"):
 	create_directory(DATA_FOLDER)
 	noteStateSeq = musicFolderToNoteStateSeq(TRAIN_MUSIC_FOLDER)
 	#wordIdxToNoteState, wordIdxToCount = loadVocabularyData(noteStateSeq)
-
+	
+	print("===================")
 	print("Creating data cache")
-	print("-------------------")
+	print("===================")
 	np.savez(outputFile, noteStateSeq=noteStateSeq)
 	print("Data cache created: {}".format(outputFile))
+	print()
 
 def loadCacheData(inputFile="cachedData.npz"):
+	print("=======================")
 	print("Loading from data cache")
-
+	print("=======================")
+	
 	inputFile = os.path.join(DATA_FOLDER, inputFile)
 	cache = np.load(inputFile)
 	noteStateSeq = cache['noteStateSeq']
 
 	print("Music sequence length: {} units".format(len(noteStateSeq)))
-	print("Music sequence duration: {} hours".format(timeUnitsToMilliseconds(len(noteStateSeq)) / 1000 / 60 / 60))
+	print("Music sequence duration: %.1f hours" % (timeUnitsToMilliseconds(len(noteStateSeq)) / 1000 / 60 / 60))
+	print()
 
 	return noteStateSeq
 
 #MAIN
 if __name__ == '__main__':
+	'''pygame.mixer.init()
+	with mido.MidiFile("test_input/alb_esp4.mid") as midoFile:
+		seq = midoFileToNoteStateSeq(midoFile)
+		output = noteStateSeqToMidiStream(seq)
+		pygame.mixer.music.load(output)
+		pygame.mixer.music.play()
+		while pygame.mixer.music.get_busy():
+			pygame.time.wait(100)
+	exit()'''
+
 	createCacheData()

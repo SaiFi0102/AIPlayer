@@ -62,8 +62,8 @@ target/
 .ipynb_checkpoints
 
 data/*
-music_all/*
-music_dev/*
+music_*/*
+figures/*
 input/*
 output/*
 *.sublime-*
